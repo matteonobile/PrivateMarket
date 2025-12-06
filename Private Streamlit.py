@@ -72,7 +72,7 @@ mu = expected_returns
 
 cov_matrix = pd.read_excel(file_path_cov,sheet_name="Sheet1")
 cov_matrix.set_index(cov_matrix.columns[0],inplace=True,drop=True)
-cov_matrix = cov_matrix.loc[assets,assets]
+cov_matrix = cov_matrix.loc[assets,assets].astype(float)
 cov_matrix.loc['Cash USD','Cash USD'] = 0.00001
 sigma = cov_matrix
 # sigma = D @ corr @ D
@@ -85,7 +85,7 @@ w_cash = 0.05
 risk_free = 0.0
 
 # Steps per la simulazione (Grid 10x10 per velocità)
-steps = np.linspace(0, 1, 11) 
+steps = np.linspace(0, 1, 21) 
 
 # ---------------------------------------------------------
 # 4. MOTORE DI CALCOLO
@@ -157,6 +157,7 @@ with col1:
                 fmt=".3f", 
                 cmap='RdYlGn', 
                 ax=ax,
+                annot_kws={"size": 6},
                 cbar_kws={'label': 'Weighted Sharpe Ratio'})
     
     ax.set_ylabel('% Private Equity (on Tot Equity)')
