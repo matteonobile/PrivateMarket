@@ -13,6 +13,13 @@ import seaborn as sns
 import matplotlib.pyplot as plt
 import os
 
+
+# Stampa di debug (rimuovila quando hai risolto)
+st.error("DEBUG MODE ATTIVO")
+st.write(f"Cartella di lavoro corrente: {os.getcwd()}")
+st.write("File trovati in questa cartella:")
+st.code(os.listdir(os.getcwd()))
+
 # ---------------------------------------------------------
 # 1. SETUP PAGINA E TITOLI
 # ---------------------------------------------------------
@@ -54,8 +61,8 @@ st.sidebar.info(f"Estimated Scenario:\n\n**{prob_normal:.1%}** no liquidation\n*
 assets = ['EQUITIES','Private Equity','BONDS','Private Debt','ALTERNATIVES','Cash USD']
 
 current_dir = os.path.dirname(os.path.abspath(__file__))
-file_path_ret = os.path.join(current_dir,"SAA Posterior FX UKIN Aggregation USD 20250901.xlsx")
-file_path_cov = os.path.join(current_dir,"SAA Covariance FX UKIN Aggregation USD 20250901.xlsx")
+file_path_ret = os.path.join(current_dir,"Posterior.xlsx")
+file_path_cov = os.path.join(current_dir,"Covariance.xlsx")
 
 expected_returns = pd.read_excel(file_path_ret,sheet_name="Sheet1")
 expected_returns.set_index('index',drop=True,inplace=True)
