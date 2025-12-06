@@ -14,11 +14,11 @@ import matplotlib.pyplot as plt
 import os
 
 
-# Stampa di debug (rimuovila quando hai risolto)
-st.error("DEBUG MODE ATTIVO")
-st.write(f"Cartella di lavoro corrente: {os.getcwd()}")
-st.write("File trovati in questa cartella:")
-st.code(os.listdir(os.getcwd()))
+# # Stampa di debug (rimuovila quando hai risolto)
+# st.error("DEBUG MODE ATTIVO")
+# st.write(f"Cartella di lavoro corrente: {os.getcwd()}")
+# st.write("File trovati in questa cartella:")
+# st.code(os.listdir(os.getcwd()))
 
 # ---------------------------------------------------------
 # 1. SETUP PAGINA E TITOLI
