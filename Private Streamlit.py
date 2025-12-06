@@ -52,13 +52,13 @@ st.sidebar.info(f"Estimated Scenario:\n\n**{prob_normal:.1%}** no liquidation\n*
 # Simuliamo i dati (nel tuo caso reale caricheresti un Excel)
 assets = ['EQUITIES','Private Equity','BONDS','Private Debt','ALTERNATIVES','Cash USD']
 
-expected_returns = pd.read_excel("SAA Posterior FX UKIN Aggregation USD 20250901.xlsx",sheet_name="Sheet1")
+expected_returns = pd.read_excel("./SAA Posterior FX UKIN Aggregation USD 20250901.xlsx",sheet_name="Sheet1")
 expected_returns.set_index('index',drop=True,inplace=True)
 expected_returns = expected_returns.iloc[:,0]
 expected_returns = expected_returns.loc[assets]
 mu = expected_returns
 
-cov_matrix = pd.read_excel("SAA Covariance FX UKIN Aggregation USD 20250901.xlsx",sheet_name="Sheet1")
+cov_matrix = pd.read_excel("./SAA Covariance FX UKIN Aggregation USD 20250901.xlsx",sheet_name="Sheet1")
 cov_matrix.set_index(cov_matrix.columns[0],inplace=True,drop=True)
 cov_matrix = cov_matrix.loc[assets,assets]
 cov_matrix.loc['Cash USD','Cash USD'] = 0.00001
