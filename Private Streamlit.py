@@ -93,7 +93,7 @@ def calculate_all_metrics(h_pe, h_pd, p_haircut, p_normal):
     shape = (len(steps), len(steps))
     mat_sharpe_w = np.zeros(shape)
     mat_risk_contrib = np.zeros(shape)
-    mat_div_ratio = np.zeros(shape)
+    mat_pdi = np.zeros(shape)
     
     for i, pct_pe in enumerate(steps):
         for j, pct_pd in enumerate(steps):
@@ -118,12 +118,32 @@ def calculate_all_metrics(h_pe, h_pd, p_haircut, p_normal):
             mat_risk_contrib[i, j] = (rc_abs[1] + rc_abs[3]) / port_vol
             
             # Diversification Ratio
-            vol = np.sqrt(np.diag(sigma))
-            mat_div_ratio[i, j] = np.dot(w, vol) / port_vol
-
+# 3. PDI (Morgan & Rudin - PCA Based)
+            # A. Costruiamo la matrice di covarianza pesata: Elemento (i,j) = wi * wj * cov(i,j)
+            w_diag = np.diag(w)
+            weighted_cov_matrix = w_diag @ sigma @ w_diag
+            
+            # B. Calcolo Autovalori (Eigenvalues)
+            # eigvalsh è ottimizzato per matrici simmetriche (come la covarianza)
+            eigenvalues = np.linalg.eigvalsh(weighted_cov_matrix)
+            
+            # C. Pulizia (rimuoviamo eventuali valori negativi minuscoli dovuti a errori floating point)
+            eigenvalues = np.maximum(eigenvalues, 0)
+            
+            # D. Calcolo PDI (Inverse Herfindahl of Eigenvalues)
+            # Rappresenta il numero effettivo di fattori di rischio indipendenti
+            sum_eig = np.sum(eigenvalues)
+            if sum_eig > 0:
+                p = eigenvalues / sum_eig # Normalizzazione (somma = 1)
+                pdi = 1 / np.sum(p**2)    # Inverse sum of squares
+            else:
+                pdi = 1.0
+                
+            mat_pdi[i, j] = pdi
+            
     return (pd.DataFrame(mat_sharpe_w, index=labels, columns=labels),
             pd.DataFrame(mat_risk_contrib, index=labels, columns=labels),
-            pd.DataFrame(mat_div_ratio, index=labels, columns=labels))
+            pd.DataFrame(mat_pdi, index=labels, columns=labels))
 
 df_sharpe, df_rc, df_div = calculate_all_metrics(haircut_pe, haircut_pd, prob_haircut, prob_normal)
 
@@ -136,14 +156,14 @@ col_ctrl, col_plot = st.columns([1, 3])
 with col_ctrl:
     st.subheader("Impostazioni")
     metric_choice = st.radio(
-        "Metrica da visualizzare:",
-        ("Sharpe Ratio (Ponderata)", 
+        "Metric to visualize:",
+        ("Sharpe Ratio (weighted)", 
          "Private Risk Contribution (%)", 
-         "Diversification Ratio")
+         "Diversification")
     )
     
     # Logica di selezione DataFrame e Formattazione
-    if metric_choice == "Sharpe Ratio (Ponderata)":
+    if metric_choice == "Sharpe Ratio (weighted)":
         df_selected = df_sharpe
         cmap_selected = 'RdYlGn' # Verde = Bene
         fmt_selected = ".2f"     # 2 decimali per risparmiare spazio
@@ -159,10 +179,10 @@ with col_ctrl:
         df_selected = df_div
         cmap_selected = 'viridis'
         fmt_selected = ".2f"
-        title_selected = "Diversification Ratio"
+        title_selected = "Diversification"
 
     st.markdown("---")
-    st.info("💡 **Tip:** Usa il pulsante sotto al grafico per scaricare i dati numerici.")
+    st.info("💡 **Tip:** use bottom button to download data.")
 
 with col_plot:
     st.subheader(title_selected)
@@ -182,8 +202,8 @@ with col_plot:
                 cbar_kws={'label': metric_choice})
     
     # Pulizia Assi
-    ax.set_ylabel('% Private Equity (su Tot Equity)', fontsize=11)
-    ax.set_xlabel('% Private Debt (su Tot Bond)', fontsize=11)
+    ax.set_ylabel('% Private Equity (on Tot Equity)', fontsize=11)
+    ax.set_xlabel('% Private Debt (on Tot Bond)', fontsize=11)
     plt.yticks(rotation=0, fontsize=9)
     plt.xticks(rotation=45, fontsize=9)
     
@@ -196,7 +216,7 @@ with col_plot:
     csv_buffer = df_selected.to_csv().encode('utf-8')
     
     st.download_button(
-        label=f"📥 Scarica dati {metric_choice} (CSV)",
+        label=f"📥 Download data {metric_choice} (CSV)",
         data=csv_buffer,
         file_name=f"matrix_{metric_choice.replace(' ', '_')}.csv",
         mime='text/csv',
