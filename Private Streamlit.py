@@ -85,7 +85,7 @@ w_cash = 0.05
 risk_free = 0.0
 
 # Steps per la simulazione (Grid 10x10 per velocità)
-steps = np.linspace(0, 1, 11) 
+steps = np.linspace(0, 1, 21) 
 
 # ---------------------------------------------------------
 # 4. MOTORE DI CALCOLO
