@@ -84,115 +84,120 @@ w_alt = 0.10
 w_cash = 0.05
 risk_free = 0.0
 
-# Steps per la simulazione (Grid 10x10 per velocità)
 steps = np.linspace(0, 1, 21) 
+labels = [f"{int(x*100)}%" for x in steps]
 
-# ---------------------------------------------------------
-# 4. MOTORE DI CALCOLO
-# ---------------------------------------------------------
-
-# Cache per evitare di ricalcolare se non cambiano i parametri
+# --- Funzione Calcolo (Con Cache) ---
 @st.cache_data
-def calculate_matrices(h_pe, h_pd, p_haircut, p_normal):
+def calculate_all_metrics(h_pe, h_pd, p_haircut, p_normal):
+    shape = (len(steps), len(steps))
+    mat_sharpe_w = np.zeros(shape)
+    mat_risk_contrib = np.zeros(shape)
+    mat_div_ratio = np.zeros(shape)
     
-    # Matrici vuote
-    idx_cols = [f"{int(x*100)}%" for x in steps]
-    mat_sharpe_norm = pd.DataFrame(index=idx_cols, columns=idx_cols)
-    mat_sharpe_hair = pd.DataFrame(index=idx_cols, columns=idx_cols)
-    
-    w_benchmark = np.array([w_eq_tot, 0, w_bd_tot, 0, w_alt, w_cash])
-
     for i, pct_pe in enumerate(steps):
         for j, pct_pd in enumerate(steps):
-            
-            # Pesi
             w_pe = w_eq_tot * pct_pe
             w_pbeq = w_eq_tot - w_pe
             w_pd = w_bd_tot * pct_pd
             w_pbbd = w_bd_tot - w_pd
-            
             w = np.array([w_pbeq, w_pe, w_pbbd, w_pd, w_alt, w_cash])
             
-            # 1. Metriche Standard (Scenario Normale)
-            ret_norm = np.dot(w, mu)
-            risk = np.sqrt(np.dot(w.T, np.dot(sigma, w)))
-            sharpe_norm = (ret_norm - risk_free) / risk
+            port_ret = np.dot(w, mu)
+            port_vol = np.sqrt(np.dot(w.T, np.dot(sigma, w)))
             
-            # 2. Metriche Haircut (Scenario Stress)
-            # Sottraiamo la penalità al rendimento atteso
+            # Sharpe Ponderata
             penalty = (w_pe * h_pe) + (w_pd * h_pd)
-            ret_hair = ret_norm - penalty
-            sharpe_hair = (ret_hair - risk_free) / risk
+            sharpe_norm = (port_ret - risk_free) / port_vol
+            sharpe_hair = ((port_ret - penalty) - risk_free) / port_vol
+            mat_sharpe_w[i, j] = (sharpe_norm * p_normal) + (sharpe_hair * p_haircut)
             
-            # Salvataggio
-            r_label = idx_cols[i]
-            c_label = idx_cols[j]
-            mat_sharpe_norm.loc[r_label, c_label] = sharpe_norm
-            mat_sharpe_hair.loc[r_label, c_label] = sharpe_hair
+            # Risk Contribution (Private)
+            mcr = np.dot(sigma, w) / port_vol
+            rc_abs = w * mcr
+            mat_risk_contrib[i, j] = (rc_abs[1] + rc_abs[3]) / port_vol
             
-    # Conversione a float per calcoli successivi
-    mat_sharpe_norm = mat_sharpe_norm.astype(float)
-    mat_sharpe_hair = mat_sharpe_hair.astype(float)
-    
-    # 3. Calcolo Weighted Average Sharpe
-    mat_final = (mat_sharpe_norm * p_normal) + (mat_sharpe_hair * p_haircut)
-    
-    return mat_final, mat_sharpe_norm, mat_sharpe_hair
+            # Diversification Ratio
+            vol = np.sqrt(np.diag(sigma))
+            mat_div_ratio[i, j] = np.dot(w, vol) / port_vol
 
-# Esecuzione Calcolo
-final_matrix, s_norm, s_hair = calculate_matrices(haircut_pe, haircut_pd, prob_haircut, prob_normal)
+    return (pd.DataFrame(mat_sharpe_w, index=labels, columns=labels),
+            pd.DataFrame(mat_risk_contrib, index=labels, columns=labels),
+            pd.DataFrame(mat_div_ratio, index=labels, columns=labels))
+
+df_sharpe, df_rc, df_div = calculate_all_metrics(haircut_pe, haircut_pd, prob_haircut, prob_normal)
 
 # ---------------------------------------------------------
-# 5. VISUALIZZAZIONE PRINCIPALE
+# VISUALIZZAZIONE SEABORN + DOWNLOAD
 # ---------------------------------------------------------
+st.divider()
+col_ctrl, col_plot = st.columns([1, 3])
 
-col1, col2 = st.columns([3, 1])
+with col_ctrl:
+    st.subheader("Impostazioni")
+    metric_choice = st.radio(
+        "Metrica da visualizzare:",
+        ("Sharpe Ratio (Ponderata)", 
+         "Private Risk Contribution (%)", 
+         "Diversification Ratio")
+    )
+    
+    # Logica di selezione DataFrame e Formattazione
+    if metric_choice == "Sharpe Ratio (Ponderata)":
+        df_selected = df_sharpe
+        cmap_selected = 'RdYlGn' # Verde = Bene
+        fmt_selected = ".2f"     # 2 decimali per risparmiare spazio
+        title_selected = "Weighted Sharpe Ratio"
+        
+    elif metric_choice == "Private Risk Contribution (%)":
+        df_selected = df_rc
+        cmap_selected = 'Reds'   # Rosso = Alto Rischio
+        fmt_selected = ".0%"     # Percentuale senza decimali (es. 25%) per spazio
+        title_selected = "% Risk Contribution from Private Assets"
+        
+    else:
+        df_selected = df_div
+        cmap_selected = 'viridis'
+        fmt_selected = ".2f"
+        title_selected = "Diversification Ratio"
 
-with col1:
-    st.subheader("Weighted Sharpe Ratio Heatmap")
-    
-    fig, ax = plt.subplots(figsize=(10, 8))
-    sns.heatmap(final_matrix, 
-                annot=True, 
-                fmt=".3f", 
-                cmap='RdYlGn', 
-                ax=ax,
-                annot_kws={"size": 6},
-                cbar_kws={'label': 'Weighted Sharpe Ratio'})
-    
-    ax.set_ylabel('% Private Equity (on Tot Equity)')
-    ax.set_xlabel('% Private Debt (on Tot Bond)')
-    st.pyplot(fig)
-
-with col2:
-    st.subheader("Best situation")
-    
-    # Trova il massimo
-    max_val = final_matrix.max().max()
-    max_idx = final_matrix.stack().idxmax()
-    
-    st.metric(label="Highest weighted sharpe ratio", value=f"{max_val:.4f}")
-    st.write(f"**Optimal Allocation:**")
-    st.write(f"PE: **{max_idx[0]}**")
-    st.write(f"PD: **{max_idx[1]}**")
-    
     st.markdown("---")
-    
-    # Confronto con Normalità Pura (per vedere l'impatto)
-    val_norm_at_max = s_norm.loc[max_idx[0], max_idx[1]]
-    diff = val_norm_at_max - max_val
-    
-    st.write("Haircut Impact:")
-    st.write(f"Sharps drop by **{diff:.4f}** vs no liquidation")
+    st.info("💡 **Tip:** Usa il pulsante sotto al grafico per scaricare i dati numerici.")
 
-# ---------------------------------------------------------
-# 6. DETTAGLI ESPANDIBILI
-# ---------------------------------------------------------
-with st.expander("Underlying sharpe ratios"):
-    c1, c2 = st.columns(2)
-    with c1:
-        st.write("**No liquidation scenario (100% prob)**")
-        st.dataframe(s_norm.style.background_gradient(cmap='RdYlGn', axis=None).format("{:.3f}"))
-    with c2:
-        st.write("**Liquidation scenario (100% prob)**")
-        st.dataframe(s_hair.style.background_gradient(cmap='RdYlGn', axis=None).format("{:.3f}"))
+with col_plot:
+    st.subheader(title_selected)
+    
+    # Setup Figura Matplotlib
+    # Aumentiamo la dimensione (14x12) per gestire la griglia 21x21
+    fig, ax = plt.subplots(figsize=(14, 12)) 
+    
+    # Heatmap Seaborn
+    sns.heatmap(df_selected, 
+                annot=True, 
+                fmt=fmt_selected, 
+                cmap=cmap_selected, 
+                linewidths=.5,
+                ax=ax,
+                annot_kws={"size": 7}, # <--- FONT PICCOLO (7pt)
+                cbar_kws={'label': metric_choice})
+    
+    # Pulizia Assi
+    ax.set_ylabel('% Private Equity (su Tot Equity)', fontsize=11)
+    ax.set_xlabel('% Private Debt (su Tot Bond)', fontsize=11)
+    plt.yticks(rotation=0, fontsize=9)
+    plt.xticks(rotation=45, fontsize=9)
+    
+    st.pyplot(fig)
+    
+    # ---------------------------------------------------------
+    # DOWNLOAD BUTTON (CSV)
+    # ---------------------------------------------------------
+    # Convertiamo il dataframe selezionato in CSV
+    csv_buffer = df_selected.to_csv().encode('utf-8')
+    
+    st.download_button(
+        label=f"📥 Scarica dati {metric_choice} (CSV)",
+        data=csv_buffer,
+        file_name=f"matrix_{metric_choice.replace(' ', '_')}.csv",
+        mime='text/csv',
+    )
