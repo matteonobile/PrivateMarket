@@ -48,7 +48,7 @@ st.sidebar.markdown("---")
 st.sidebar.header("2. Impact of Haircut")
 st.sidebar.markdown("*Discount applied to liquidate private position*")
 
-haircut_pe = st.sidebar.slider("Haircut Private Equity (%)", 0.0, 50.0, 20.0, step=1.0) / 100
+haircut_pe = st.sidebar.slider("Haircut Private Equity (%)", 0.0, 50.0, 30.0, step=1.0) / 100
 haircut_pd = st.sidebar.slider("Haircut Private Debt (%)", 0.0, 50.0, 10.0, step=1.0) / 100
 
 st.sidebar.markdown("---")
@@ -93,29 +93,59 @@ def calculate_all_metrics(h_pe, h_pd, p_haircut, p_normal):
     shape = (len(steps), len(steps))
     mat_sharpe_w = np.zeros(shape)
     mat_risk_contrib = np.zeros(shape)
+    mat_te_contrib = np.zeros(shape)
+    # mat_info = np.zeros(shape)
+    # mat_info_hair = np.zeros(shape)
+    mat_info_w = np.zeros(shape)
+    
     mat_pdi = np.zeros(shape)
     
     for i, pct_pe in enumerate(steps):
         for j, pct_pd in enumerate(steps):
+            
             w_pe = w_eq_tot * pct_pe
             w_pbeq = w_eq_tot - w_pe
             w_pd = w_bd_tot * pct_pd
             w_pbbd = w_bd_tot - w_pd
+            w_bmk = np.array([w_eq_tot,0,w_bd_tot, 0,w_alt,w_cash])
             w = np.array([w_pbeq, w_pe, w_pbbd, w_pd, w_alt, w_cash])
+            w_act = w - w_bmk
+            # print("Active Weights", w_act)
             
+
             port_ret = np.dot(w, mu)
+            bmk_ret = np.dot(w_bmk,mu)
+            act_ret = port_ret - bmk_ret
+            penalty = (w_pe * h_pe) + (w_pd * h_pd)
+
+            # print(i,j, round(act_ret*100,2),round(penalty*100,2))
             port_vol = np.sqrt(np.dot(w.T, np.dot(sigma, w)))
+            port_te = np.sqrt(np.dot(w_act.T, np.dot(sigma,w_act)))
             
             # Sharpe Ponderata
-            penalty = (w_pe * h_pe) + (w_pd * h_pd)
             sharpe_norm = (port_ret - risk_free) / port_vol
             sharpe_hair = ((port_ret - penalty) - risk_free) / port_vol
             mat_sharpe_w[i, j] = (sharpe_norm * p_normal) + (sharpe_hair * p_haircut)
+    
+            # information Ponderata
+            act_ret_hair = port_ret - penalty - bmk_ret
+            info_norm = act_ret / port_te
+            info_hair = act_ret_hair / port_te
+            mat_info_w[i,j] = (info_norm * p_normal) + (info_hair * p_haircut)
             
             # Risk Contribution (Private)
             mcr = np.dot(sigma, w) / port_vol
             rc_abs = w * mcr
             mat_risk_contrib[i, j] = (rc_abs[1] + rc_abs[3]) / port_vol
+            
+            # TE Contribution (Private)
+            if port_te > 0:
+                mrc = np.dot(sigma,w_act) / port_te
+                tc_abs = w_act * mrc
+                mat_te_contrib[i,j] = (tc_abs[1] + tc_abs[3]) / port_te
+            else:
+                mat_te_contrib[i,j] = 0
+            
             
             # Diversification Ratio
 # 3. PDI (Morgan & Rudin - PCA Based)
@@ -142,10 +172,12 @@ def calculate_all_metrics(h_pe, h_pd, p_haircut, p_normal):
             mat_pdi[i, j] = pdi
             
     return (pd.DataFrame(mat_sharpe_w, index=labels, columns=labels),
+            pd.DataFrame(mat_info_w, index=labels, columns = labels),
             pd.DataFrame(mat_risk_contrib, index=labels, columns=labels),
+            pd.DataFrame(mat_te_contrib, index = labels, columns=labels),
             pd.DataFrame(mat_pdi, index=labels, columns=labels))
 
-df_sharpe, df_rc, df_div = calculate_all_metrics(haircut_pe, haircut_pd, prob_haircut, prob_normal)
+df_sharpe, df_info, df_rc, df_te, df_div = calculate_all_metrics(haircut_pe, haircut_pd, prob_haircut, prob_normal)
 
 # ---------------------------------------------------------
 # VISUALIZZAZIONE SEABORN + DOWNLOAD
@@ -158,8 +190,11 @@ with col_ctrl:
     metric_choice = st.radio(
         "Metric to visualize:",
         ("Sharpe Ratio (weighted)", 
+         "Information Ratio (weighted)", 
          "Private Risk Contribution (%)", 
-         "Diversification")
+         "Private TE Contribution (%)",
+         "Diversification"
+         )
     )
     
     # Logica di selezione DataFrame e Formattazione
@@ -168,12 +203,25 @@ with col_ctrl:
         cmap_selected = 'RdYlGn' # Verde = Bene
         fmt_selected = ".2f"     # 2 decimali per risparmiare spazio
         title_selected = "Weighted Sharpe Ratio"
-        
+
+    elif metric_choice == "Information Ratio (weighted)":
+        df_selected = df_info
+        cmap_selected = 'RdYlGn' # Verde = Bene
+        fmt_selected = ".2f"     # 2 decimali per risparmiare spazio
+        title_selected = "Weighted Information Ratio"
+
     elif metric_choice == "Private Risk Contribution (%)":
         df_selected = df_rc
         cmap_selected = 'Reds'   # Rosso = Alto Rischio
         fmt_selected = ".0%"     # Percentuale senza decimali (es. 25%) per spazio
         title_selected = "% Risk Contribution from Private Assets"
+
+    elif metric_choice == "Private TE Contribution (%)":
+        df_selected = df_te
+        cmap_selected = 'Reds'   # Rosso = Alto Rischio
+        fmt_selected = ".0%"     # Percentuale senza decimali (es. 25%) per spazio
+        title_selected = "% TE Contribution from Private Assets"
+
         
     else:
         df_selected = df_div
